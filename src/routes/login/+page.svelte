@@ -1,11 +1,40 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import type { ActionData } from './$types';
-
-	let { form }: { form: ActionData } = $props();
+	import { goto } from '$app/navigation';
+	import { apiFetch } from '$lib/api';
 
 	let loading = $state(false);
 	let showPassword = $state(false);
+	let error = $state('');
+
+	let username = $state('');
+	let password = $state('');
+
+	async function handleSubmit(e: Event) {
+		e.preventDefault();
+		if (loading) return;
+
+		loading = true;
+		error = '';
+
+		try {
+			const response = await apiFetch('/users', {
+				method: 'POST',
+				body: JSON.stringify({ username, password })
+			});
+
+			if (!response.ok) {
+				const body = await response.json().catch(() => ({}));
+				error = (body as { errors?: string }).errors ?? 'Username atau password salah.';
+				return;
+			}
+
+			goto('/serial-numbers');
+		} catch {
+			error = 'Tidak dapat terhubung ke server. Coba beberapa saat lagi.';
+		} finally {
+			loading = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -16,9 +45,7 @@
 	<div class="w-full max-w-sm">
 		<!-- Brand -->
 		<div class="mb-8 text-center">
-			<div
-				class="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900"
-			>
+			<div class="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900">
 				<svg
 					class="h-5 w-5 text-white"
 					viewBox="0 0 24 24"
@@ -39,7 +66,7 @@
 
 		<!-- Card -->
 		<div class="rounded-2xl border border-slate-100 bg-white px-8 py-8 shadow-sm">
-			{#if form?.error}
+			{#if error}
 				<div
 					class="mb-5 flex items-start gap-2.5 rounded-lg border border-red-100 bg-red-50 px-4 py-3"
 				>
@@ -56,26 +83,14 @@
 						<line x1="12" y1="8" x2="12" y2="12" />
 						<line x1="12" y1="16" x2="12.01" y2="16" />
 					</svg>
-					<p class="text-sm text-red-700">{form.error}</p>
+					<p class="text-sm text-red-700">{error}</p>
 				</div>
 			{/if}
 
-			<form
-				method="POST"
-				use:enhance={() => {
-					loading = true;
-					return async ({ update }) => {
-						loading = false;
-						await update();
-					};
-				}}
-				class="space-y-5"
-			>
+			<form onsubmit={handleSubmit} class="space-y-5">
 				<!-- Username -->
 				<div class="space-y-1.5">
-					<label for="username" class="block text-sm font-medium text-slate-700">
-						Username
-					</label>
+					<label for="username" class="block text-sm font-medium text-slate-700">Username</label>
 					<input
 						id="username"
 						name="username"
@@ -83,16 +98,15 @@
 						required
 						autocomplete="username"
 						placeholder="Masukkan username"
-						class="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+						bind:value={username}
 						disabled={loading}
+						class="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
 					/>
 				</div>
 
 				<!-- Password -->
 				<div class="space-y-1.5">
-					<label for="password" class="block text-sm font-medium text-slate-700">
-						Password
-					</label>
+					<label for="password" class="block text-sm font-medium text-slate-700">Password</label>
 					<div class="relative">
 						<input
 							id="password"
@@ -101,8 +115,9 @@
 							required
 							autocomplete="current-password"
 							placeholder="Masukkan password"
-							class="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 pr-10 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+							bind:value={password}
 							disabled={loading}
+							class="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 pr-10 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
 						/>
 						<button
 							type="button"
@@ -151,13 +166,7 @@
 					class="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
 				>
 					{#if loading}
-						<svg
-							class="h-4 w-4 animate-spin"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-						>
+						<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 							<path d="M21 12a9 9 0 1 1-6.219-8.56" />
 						</svg>
 						Memproses...

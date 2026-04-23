@@ -1,12 +1,10 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { goto } from '$app/navigation';
-	import type { PageData, ActionData } from './$types';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { apiFetch } from '$lib/api';
+	import type { PageData } from './$types';
 	import type { SerialNumber } from '$lib/types';
 
-	let { data, form }: { data: PageData; form: ActionData } = $props();
-
-	type FormResult = { actionSuccess?: string; actionError?: string } | null;
+	let { data }: { data: PageData } = $props();
 
 	let showUpdate = $state(false);
 	let showDelete = $state(false);
@@ -22,27 +20,21 @@
 	let editStatus = $state('AVAILABLE');
 	let editNotes = $state('');
 
-	let searchId = $state(data.filters.serialNumberId);
-	let searchActivate = $state(data.filters.isActivate);
+	let searchId = $state('');
+	let searchActivate = $state('');
+
+	// Sync search fields when URL params change (e.g. after navigation/search submit)
+	$effect(() => {
+		searchId = data.filters.serialNumberId;
+		searchActivate = data.filters.isActivate;
+	});
 
 	let toast = $state<{ msg: string; type: 'success' | 'error' } | null>(null);
 
-	$effect(() => {
-		const f = form as FormResult;
-		if (f?.actionSuccess) {
-			toast = { msg: f.actionSuccess, type: 'success' };
-			showUpdate = false;
-			showDelete = false;
-			showReset = false;
-			const t = setTimeout(() => (toast = null), 4000);
-			return () => clearTimeout(t);
-		}
-		if (f?.actionError) {
-			toast = { msg: f.actionError, type: 'error' };
-			const t = setTimeout(() => (toast = null), 4000);
-			return () => clearTimeout(t);
-		}
-	});
+	function showToast(msg: string, type: 'success' | 'error') {
+		toast = { msg, type };
+		setTimeout(() => (toast = null), 4000);
+	}
 
 	function openUpdate(item: SerialNumber) {
 		selectedItem = item;
@@ -64,6 +56,93 @@
 	function openReset(item: SerialNumber) {
 		selectedItem = item;
 		showReset = true;
+	}
+
+	async function handleUpdate() {
+		if (!selectedItem || actionLoading) return;
+		actionLoading = true;
+		try {
+			const response = await apiFetch(`/serial-numbers/${selectedItem.serialNumberId}`, {
+				method: 'PUT',
+				body: JSON.stringify({
+					clientName: editClientName || null,
+					clientPhoneNumber: editPhone || null,
+					shopName: editShopName || null,
+					deviceId: editDeviceId || null,
+					isActivate: editIsActivate === 'true',
+					status: editStatus,
+					notes: editNotes || null
+				})
+			});
+			if (response.status === 401) { goto('/login'); return; }
+			if (!response.ok) {
+				const body = await response.json().catch(() => ({}));
+				showToast((body as { message?: string }).message ?? 'Gagal memperbarui data.', 'error');
+				return;
+			}
+			showUpdate = false;
+			showToast('Serial number berhasil diperbarui.', 'success');
+			invalidateAll();
+		} catch {
+			showToast('Tidak dapat terhubung ke server.', 'error');
+		} finally {
+			actionLoading = false;
+		}
+	}
+
+	async function handleDelete() {
+		if (!selectedItem || actionLoading) return;
+		actionLoading = true;
+		try {
+			const response = await apiFetch(`/serial-numbers/${selectedItem.serialNumberId}`, {
+				method: 'DELETE'
+			});
+			if (response.status === 401) { goto('/login'); return; }
+			if (!response.ok) {
+				const body = await response.json().catch(() => ({}));
+				showToast((body as { message?: string }).message ?? 'Gagal menghapus data.', 'error');
+				return;
+			}
+			showDelete = false;
+			showToast('Serial number berhasil dihapus.', 'success');
+			invalidateAll();
+		} catch {
+			showToast('Tidak dapat terhubung ke server.', 'error');
+		} finally {
+			actionLoading = false;
+		}
+	}
+
+	async function handleReset() {
+		if (!selectedItem || actionLoading) return;
+		actionLoading = true;
+		try {
+			const response = await apiFetch(`/serial-numbers/${selectedItem.serialNumberId}/reset`, {
+				method: 'POST'
+			});
+			if (response.status === 401) { goto('/login'); return; }
+			if (!response.ok) {
+				const body = await response.json().catch(() => ({}));
+				showToast((body as { message?: string }).message ?? 'Gagal mereset serial number.', 'error');
+				return;
+			}
+			showReset = false;
+			showToast('Serial number berhasil direset.', 'success');
+			invalidateAll();
+		} catch {
+			showToast('Tidak dapat terhubung ke server.', 'error');
+		} finally {
+			actionLoading = false;
+		}
+	}
+
+	async function handleLogout() {
+		try {
+			await apiFetch('/users/logout', { method: 'POST' });
+		} catch {
+			// ignore — redirect tetap berjalan
+		}
+		goto('/login');
 	}
 
 	function handleSearch(e: Event) {
@@ -125,14 +204,13 @@
 <header class="sticky top-0 z-40 border-b border-slate-200 bg-white">
 	<div class="mx-auto flex h-14 max-w-screen-xl items-center justify-between px-4 sm:px-6">
 		<span class="text-base font-semibold text-slate-900">Toko Kita</span>
-		<form method="POST" action="/logout">
-			<button
-				type="submit"
-				class="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
-			>
-				Keluar
-			</button>
-		</form>
+		<button
+			type="button"
+			onclick={handleLogout}
+			class="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
+		>
+			Keluar
+		</button>
 	</div>
 </header>
 
@@ -231,58 +309,28 @@
 								<td class="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-700">{item.deviceId ?? '—'}</td>
 								<td class="whitespace-nowrap px-4 py-3">
 									{#if item.isActivate}
-										<span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-											Aktif
-										</span>
+										<span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Aktif</span>
 									{:else}
-										<span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
-											Tidak Aktif
-										</span>
+										<span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">Tidak Aktif</span>
 									{/if}
 								</td>
 								<td class="whitespace-nowrap px-4 py-3">
 									{#if item.status === 'AVAILABLE'}
-										<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-											{item.status}
-										</span>
+										<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{item.status}</span>
 									{:else if item.status === 'ACTIVATED'}
-										<span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-											{item.status}
-										</span>
+										<span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">{item.status}</span>
 									{:else}
-										<span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
-											{item.status}
-										</span>
+										<span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">{item.status}</span>
 									{/if}
 								</td>
-								<td class="max-w-[160px] truncate px-4 py-3 text-slate-500" title={item.notes ?? ''}>
-									{item.notes ?? '—'}
-								</td>
+								<td class="max-w-[160px] truncate px-4 py-3 text-slate-500" title={item.notes ?? ''}>{item.notes ?? '—'}</td>
 								<td class="whitespace-nowrap px-4 py-3 text-slate-500">{fmtDate(item.createdAt)}</td>
 								<td class="whitespace-nowrap px-4 py-3 text-slate-500">{fmtDate(item.updatedAt)}</td>
 								<td class="whitespace-nowrap px-4 py-3">
 									<div class="flex items-center gap-1.5">
-										<button
-											type="button"
-											onclick={() => openUpdate(item)}
-											class="rounded px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 transition-colors hover:bg-slate-200"
-										>
-											Update
-										</button>
-										<button
-											type="button"
-											onclick={() => openDelete(item)}
-											class="rounded px-2.5 py-1 text-xs font-medium text-red-600 bg-red-50 transition-colors hover:bg-red-100"
-										>
-											Hapus
-										</button>
-										<button
-											type="button"
-											onclick={() => openReset(item)}
-											class="rounded px-2.5 py-1 text-xs font-medium text-amber-700 bg-amber-50 transition-colors hover:bg-amber-100"
-										>
-											Reset
-										</button>
+										<button type="button" onclick={() => openUpdate(item)} class="rounded px-2.5 py-1 text-xs font-medium bg-slate-100 text-slate-700 transition-colors hover:bg-slate-200">Update</button>
+										<button type="button" onclick={() => openDelete(item)} class="rounded px-2.5 py-1 text-xs font-medium bg-red-50 text-red-600 transition-colors hover:bg-red-100">Hapus</button>
+										<button type="button" onclick={() => openReset(item)} class="rounded px-2.5 py-1 text-xs font-medium bg-amber-50 text-amber-700 transition-colors hover:bg-amber-100">Reset</button>
 									</div>
 								</td>
 							</tr>
@@ -323,9 +371,7 @@
 								type="button"
 								onclick={() => goToPage(p as number)}
 								class="min-w-[2rem] rounded px-2 py-1 text-xs font-medium transition-colors {p === data.pagination.page ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}"
-							>
-								{p}
-							</button>
+							>{p}</button>
 						{/if}
 					{/each}
 					<button
@@ -347,161 +393,72 @@
 
 <!-- ── Update Modal ─────────────────────────────────── -->
 {#if showUpdate && selectedItem}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		onclick={() => (showUpdate = false)}
-	>
-		<div
-			class="w-full max-w-lg rounded-xl bg-white shadow-xl"
-			onclick={(e) => e.stopPropagation()}
-		>
+	<div role="presentation" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onclick={() => (showUpdate = false)} onkeydown={(e) => e.key === 'Escape' && (showUpdate = false)}>
+		<div role="presentation" class="w-full max-w-lg rounded-xl bg-white shadow-xl" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 			<div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
 				<h2 class="text-base font-semibold text-slate-900">
 					Update — <span class="font-mono text-slate-500">{selectedItem.serialNumberId}</span>
 				</h2>
-				<button
-					type="button"
-					onclick={() => (showUpdate = false)}
-					class="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-				>
+				<button type="button" aria-label="Tutup" onclick={() => (showUpdate = false)} class="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600">
 					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width={2}>
 						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
 					</svg>
 				</button>
 			</div>
-			<form
-				method="POST"
-				action="?/update"
-				use:enhance={() => {
-					actionLoading = true;
-					return async ({ update }) => {
-						actionLoading = false;
-						await update();
-					};
-				}}
-			>
-				<input type="hidden" name="serialNumberId" value={selectedItem.serialNumberId} />
-				<div class="space-y-4 px-5 py-4">
-					<div class="grid grid-cols-2 gap-4">
-						<div class="flex flex-col gap-1">
-							<label class="text-xs font-medium text-slate-600" for="editClientName">Client Name</label>
-							<input
-								id="editClientName"
-								name="clientName"
-								type="text"
-								bind:value={editClientName}
-								placeholder="—"
-								class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-							/>
-						</div>
-						<div class="flex flex-col gap-1">
-							<label class="text-xs font-medium text-slate-600" for="editPhone">Phone Number</label>
-							<input
-								id="editPhone"
-								name="clientPhoneNumber"
-								type="text"
-								bind:value={editPhone}
-								placeholder="—"
-								class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-							/>
-						</div>
-						<div class="flex flex-col gap-1">
-							<label class="text-xs font-medium text-slate-600" for="editShopName">Shop Name</label>
-							<input
-								id="editShopName"
-								name="shopName"
-								type="text"
-								bind:value={editShopName}
-								placeholder="—"
-								class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-							/>
-						</div>
-						<div class="flex flex-col gap-1">
-							<label class="text-xs font-medium text-slate-600" for="editDeviceId">Device ID</label>
-							<input
-								id="editDeviceId"
-								name="deviceId"
-								type="text"
-								bind:value={editDeviceId}
-								placeholder="—"
-								class="rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm text-slate-900 placeholder:font-sans placeholder:text-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-							/>
-						</div>
-						<div class="flex flex-col gap-1">
-							<label class="text-xs font-medium text-slate-600" for="editStatus">Status</label>
-							<select
-								id="editStatus"
-								name="status"
-								bind:value={editStatus}
-								class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-							>
-								<option value="AVAILABLE">AVAILABLE</option>
-								<option value="ACTIVATED">ACTIVATED</option>
-								<option value="INACTIVE">INACTIVE</option>
-							</select>
-						</div>
-						<div class="flex flex-col gap-1">
-							<label class="text-xs font-medium text-slate-600" for="editIsActivate">Status Aktivasi</label>
-							<select
-								id="editIsActivate"
-								name="isActivate"
-								bind:value={editIsActivate}
-								class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-							>
-								<option value="true">Aktif</option>
-								<option value="false">Tidak Aktif</option>
-							</select>
-						</div>
+			<div class="space-y-4 px-5 py-4">
+				<div class="grid grid-cols-2 gap-4">
+					<div class="flex flex-col gap-1">
+						<label class="text-xs font-medium text-slate-600" for="editClientName">Client Name</label>
+						<input id="editClientName" type="text" bind:value={editClientName} placeholder="—" class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200" />
 					</div>
 					<div class="flex flex-col gap-1">
-						<label class="text-xs font-medium text-slate-600" for="editNotes">Notes</label>
-						<textarea
-							id="editNotes"
-							name="notes"
-							bind:value={editNotes}
-							rows={3}
-							placeholder="Catatan tambahan..."
-							class="resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-						></textarea>
+						<label class="text-xs font-medium text-slate-600" for="editPhone">Phone Number</label>
+						<input id="editPhone" type="text" bind:value={editPhone} placeholder="—" class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+					</div>
+					<div class="flex flex-col gap-1">
+						<label class="text-xs font-medium text-slate-600" for="editShopName">Shop Name</label>
+						<input id="editShopName" type="text" bind:value={editShopName} placeholder="—" class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+					</div>
+					<div class="flex flex-col gap-1">
+						<label class="text-xs font-medium text-slate-600" for="editDeviceId">Device ID</label>
+						<input id="editDeviceId" type="text" bind:value={editDeviceId} placeholder="—" class="rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm text-slate-900 placeholder:font-sans placeholder:text-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200" />
+					</div>
+					<div class="flex flex-col gap-1">
+						<label class="text-xs font-medium text-slate-600" for="editStatus">Status</label>
+						<select id="editStatus" bind:value={editStatus} class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200">
+							<option value="AVAILABLE">AVAILABLE</option>
+							<option value="ACTIVATED">ACTIVATED</option>
+							<option value="INACTIVE">INACTIVE</option>
+						</select>
+					</div>
+					<div class="flex flex-col gap-1">
+						<label class="text-xs font-medium text-slate-600" for="editIsActivate">Status Aktivasi</label>
+						<select id="editIsActivate" bind:value={editIsActivate} class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200">
+							<option value="true">Aktif</option>
+							<option value="false">Tidak Aktif</option>
+						</select>
 					</div>
 				</div>
-				<div class="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-4">
-					<button
-						type="button"
-						onclick={() => (showUpdate = false)}
-						class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-					>
-						Batal
-					</button>
-					<button
-						type="submit"
-						disabled={actionLoading}
-						class="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:opacity-60"
-					>
-						{#if actionLoading}
-							<svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-							</svg>
-						{/if}
-						Simpan
-					</button>
+				<div class="flex flex-col gap-1">
+					<label class="text-xs font-medium text-slate-600" for="editNotes">Notes</label>
+					<textarea id="editNotes" bind:value={editNotes} rows={3} placeholder="Catatan tambahan..." class="resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"></textarea>
 				</div>
-			</form>
+			</div>
+			<div class="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-4">
+				<button type="button" onclick={() => (showUpdate = false)} class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">Batal</button>
+				<button type="button" onclick={handleUpdate} disabled={actionLoading} class="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:opacity-60">
+					{#if actionLoading}<svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>{/if}
+					Simpan
+				</button>
+			</div>
 		</div>
 	</div>
 {/if}
 
 <!-- ── Delete Modal ─────────────────────────────────── -->
 {#if showDelete && selectedItem}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		onclick={() => (showDelete = false)}
-	>
-		<div
-			class="w-full max-w-sm rounded-xl bg-white shadow-xl"
-			onclick={(e) => e.stopPropagation()}
-		>
+	<div role="presentation" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onclick={() => (showDelete = false)} onkeydown={(e) => e.key === 'Escape' && (showDelete = false)}>
+		<div role="presentation" class="w-full max-w-sm rounded-xl bg-white shadow-xl" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 			<div class="p-5">
 				<div class="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-red-50">
 					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width={2}>
@@ -510,44 +467,15 @@
 				</div>
 				<h2 class="text-base font-semibold text-slate-900">Hapus Serial Number</h2>
 				<p class="mt-1.5 text-sm text-slate-500">
-					Yakin ingin menghapus <span class="font-mono font-semibold text-slate-800">{selectedItem.serialNumberId}</span>?
-					Tindakan ini tidak dapat dibatalkan.
+					Yakin ingin menghapus <span class="font-mono font-semibold text-slate-800">{selectedItem.serialNumberId}</span>? Tindakan ini tidak dapat dibatalkan.
 				</p>
 			</div>
 			<div class="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-4">
-				<button
-					type="button"
-					onclick={() => (showDelete = false)}
-					class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-				>
-					Batal
+				<button type="button" onclick={() => (showDelete = false)} class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">Batal</button>
+				<button type="button" onclick={handleDelete} disabled={actionLoading} class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-60">
+					{#if actionLoading}<svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>{/if}
+					Hapus
 				</button>
-				<form
-					method="POST"
-					action="?/delete"
-					use:enhance={() => {
-						actionLoading = true;
-						return async ({ update }) => {
-							actionLoading = false;
-							await update();
-						};
-					}}
-				>
-					<input type="hidden" name="serialNumberId" value={selectedItem.serialNumberId} />
-					<button
-						type="submit"
-						disabled={actionLoading}
-						class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-60"
-					>
-						{#if actionLoading}
-							<svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-							</svg>
-						{/if}
-						Hapus
-					</button>
-				</form>
 			</div>
 		</div>
 	</div>
@@ -555,14 +483,8 @@
 
 <!-- ── Reset Modal ──────────────────────────────────── -->
 {#if showReset && selectedItem}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		onclick={() => (showReset = false)}
-	>
-		<div
-			class="w-full max-w-sm rounded-xl bg-white shadow-xl"
-			onclick={(e) => e.stopPropagation()}
-		>
+	<div role="presentation" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onclick={() => (showReset = false)} onkeydown={(e) => e.key === 'Escape' && (showReset = false)}>
+		<div role="presentation" class="w-full max-w-sm rounded-xl bg-white shadow-xl" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 			<div class="p-5">
 				<div class="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-amber-50">
 					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width={2}>
@@ -571,44 +493,15 @@
 				</div>
 				<h2 class="text-base font-semibold text-slate-900">Reset Serial Number</h2>
 				<p class="mt-1.5 text-sm text-slate-500">
-					Yakin ingin mereset <span class="font-mono font-semibold text-slate-800">{selectedItem.serialNumberId}</span>?
-					Data aktivasi akan dikembalikan ke kondisi awal.
+					Yakin ingin mereset <span class="font-mono font-semibold text-slate-800">{selectedItem.serialNumberId}</span>? Data aktivasi akan dikembalikan ke kondisi awal.
 				</p>
 			</div>
 			<div class="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-4">
-				<button
-					type="button"
-					onclick={() => (showReset = false)}
-					class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-				>
-					Batal
+				<button type="button" onclick={() => (showReset = false)} class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">Batal</button>
+				<button type="button" onclick={handleReset} disabled={actionLoading} class="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-60">
+					{#if actionLoading}<svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>{/if}
+					Reset
 				</button>
-				<form
-					method="POST"
-					action="?/reset"
-					use:enhance={() => {
-						actionLoading = true;
-						return async ({ update }) => {
-							actionLoading = false;
-							await update();
-						};
-					}}
-				>
-					<input type="hidden" name="serialNumberId" value={selectedItem.serialNumberId} />
-					<button
-						type="submit"
-						disabled={actionLoading}
-						class="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-60"
-					>
-						{#if actionLoading}
-							<svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-							</svg>
-						{/if}
-						Reset
-					</button>
-				</form>
 			</div>
 		</div>
 	</div>
@@ -616,21 +509,15 @@
 
 <!-- ── Toast ────────────────────────────────────────── -->
 {#if toast}
-	<div
-		class="fixed bottom-6 right-6 z-[60] max-w-sm rounded-xl border shadow-lg {toast.type === 'success' ? 'border-green-100 bg-white' : 'border-red-100 bg-white'} px-4 py-3"
-	>
+	<div class="fixed bottom-6 right-6 z-[60] max-w-sm rounded-xl border shadow-lg {toast.type === 'success' ? 'border-green-100 bg-white' : 'border-red-100 bg-white'} px-4 py-3">
 		<div class="flex items-start gap-3">
 			{#if toast.type === 'success'}
 				<div class="mt-0.5 flex-shrink-0 rounded-full bg-green-100 p-1">
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width={2.5}>
-						<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-					</svg>
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width={2.5}><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
 				</div>
 			{:else}
 				<div class="mt-0.5 flex-shrink-0 rounded-full bg-red-100 p-1">
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width={2.5}>
-						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-					</svg>
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width={2.5}><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
 				</div>
 			{/if}
 			<p class="text-sm text-slate-700">{toast.msg}</p>

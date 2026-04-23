@@ -1,0 +1,32 @@
+server {
+    listen 80;
+    server_name your-domain.com;   # ganti dengan domain/IP Anda
+
+    root /var/www/toko-kita-web;   # path ke folder build/
+    index 200.html;
+
+    # SPA fallback — semua route diarahkan ke 200.html agar client-side routing bekerja
+    location / {
+        try_files $uri $uri/ /200.html;
+    }
+
+    # Proxy ke backend (opsional — jika frontend dan backend satu domain)
+    # Dengan cara ini CORS tidak diperlukan dan cookies bekerja normal
+    # location /api/ {
+    #     proxy_pass http://localhost:3000/;
+    #     proxy_set_header Host $host;
+    #     proxy_set_header X-Real-IP $remote_addr;
+    #     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    # }
+
+    # Cache aset statis (JS/CSS/gambar)
+    location /_app/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Jangan cache 200.html
+    location = /200.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+}
