@@ -1,10 +1,16 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { apiFetch } from '$lib/api';
+	import { isAuthenticated, setAuthenticated } from '$lib/auth';
 
 	let loading = $state(false);
 	let showPassword = $state(false);
 	let error = $state('');
+
+	onMount(() => {
+		if (isAuthenticated()) goto('/serial-numbers', { replaceState: true });
+	});
 
 	let username = $state('');
 	let password = $state('');
@@ -28,6 +34,7 @@
 				return;
 			}
 
+			setAuthenticated();
 			goto('/serial-numbers');
 		} catch {
 			error = 'Tidak dapat terhubung ke server. Coba beberapa saat lagi.';

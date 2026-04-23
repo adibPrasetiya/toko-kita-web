@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/api';
+import { clearAuthenticated } from '$lib/auth';
 import type { PageLoad } from './$types';
 import type { SerialNumber, SerialNumberListResponse } from '$lib/types';
 
@@ -26,6 +27,7 @@ export const load: PageLoad = async ({ url }) => {
 	}
 
 	if (response.status === 401) {
+		clearAuthenticated();
 		redirect(303, '/login');
 	}
 

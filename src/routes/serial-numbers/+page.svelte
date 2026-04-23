@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { apiFetch } from '$lib/api';
+	import { clearAuthenticated } from '$lib/auth';
 	import type { PageData } from './$types';
 	import type { SerialNumber } from '$lib/types';
 
@@ -30,6 +31,14 @@
 	});
 
 	let toast = $state<{ msg: string; type: 'success' | 'error' } | null>(null);
+
+	// Change password
+	let showChangePassword = $state(false);
+	let cpCurrentPassword = $state('');
+	let cpNewPassword = $state('');
+	let cpShowCurrent = $state(false);
+	let cpShowNew = $state(false);
+	let cpLoading = $state(false);
 
 	function showToast(msg: string, type: 'success' | 'error') {
 		toast = { msg, type };
@@ -74,7 +83,7 @@
 					notes: editNotes || null
 				})
 			});
-			if (response.status === 401) { goto('/login'); return; }
+			if (response.status === 401) { clearAuthenticated(); goto('/login'); return; }
 			if (!response.ok) {
 				const body = await response.json().catch(() => ({}));
 				showToast((body as { message?: string }).message ?? 'Gagal memperbarui data.', 'error');
@@ -97,7 +106,7 @@
 			const response = await apiFetch(`/serial-numbers/${selectedItem.serialNumberId}`, {
 				method: 'DELETE'
 			});
-			if (response.status === 401) { goto('/login'); return; }
+			if (response.status === 401) { clearAuthenticated(); goto('/login'); return; }
 			if (!response.ok) {
 				const body = await response.json().catch(() => ({}));
 				showToast((body as { message?: string }).message ?? 'Gagal menghapus data.', 'error');
@@ -120,7 +129,7 @@
 			const response = await apiFetch(`/serial-numbers/${selectedItem.serialNumberId}/reset`, {
 				method: 'POST'
 			});
-			if (response.status === 401) { goto('/login'); return; }
+			if (response.status === 401) { clearAuthenticated(); goto('/login'); return; }
 			if (!response.ok) {
 				const body = await response.json().catch(() => ({}));
 				showToast((body as { message?: string }).message ?? 'Gagal mereset serial number.', 'error');
@@ -138,11 +147,37 @@
 
 	async function handleLogout() {
 		try {
-			await apiFetch('/users/logout', { method: 'POST' });
+			await apiFetch('/users', { method: 'DELETE' });
 		} catch {
 			// ignore — redirect tetap berjalan
 		}
+		clearAuthenticated();
 		goto('/login');
+	}
+
+	async function handleChangePassword() {
+		if (!cpCurrentPassword || !cpNewPassword || cpLoading) return;
+		cpLoading = true;
+		try {
+			const response = await apiFetch('/users', {
+				method: 'PATCH',
+				body: JSON.stringify({ currentPassword: cpCurrentPassword, newPassword: cpNewPassword })
+			});
+			if (response.status === 401) { clearAuthenticated(); goto('/login'); return; }
+			if (!response.ok) {
+				const body = await response.json().catch(() => ({}));
+				showToast((body as { errors?: string }).errors ?? 'Gagal mengganti password.', 'error');
+				return;
+			}
+			showChangePassword = false;
+			cpCurrentPassword = '';
+			cpNewPassword = '';
+			showToast('Password berhasil diperbarui.', 'success');
+		} catch {
+			showToast('Tidak dapat terhubung ke server.', 'error');
+		} finally {
+			cpLoading = false;
+		}
 	}
 
 	function handleSearch(e: Event) {
@@ -204,13 +239,22 @@
 <header class="sticky top-0 z-40 border-b border-slate-200 bg-white">
 	<div class="mx-auto flex h-14 max-w-screen-xl items-center justify-between px-4 sm:px-6">
 		<span class="text-base font-semibold text-slate-900">Toko Kita</span>
-		<button
-			type="button"
-			onclick={handleLogout}
-			class="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
-		>
-			Keluar
-		</button>
+		<div class="flex items-center gap-1">
+			<button
+				type="button"
+				onclick={() => (showChangePassword = true)}
+				class="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
+			>
+				Ganti Password
+			</button>
+			<button
+				type="button"
+				onclick={handleLogout}
+				class="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
+			>
+				Keluar
+			</button>
+		</div>
 	</div>
 </header>
 
@@ -501,6 +545,73 @@
 				<button type="button" onclick={handleReset} disabled={actionLoading} class="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-600 disabled:opacity-60">
 					{#if actionLoading}<svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>{/if}
 					Reset
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- ── Change Password Modal ───────────────────────── -->
+{#if showChangePassword}
+	<div role="presentation" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onclick={() => (showChangePassword = false)} onkeydown={(e) => e.key === 'Escape' && (showChangePassword = false)}>
+		<div role="presentation" class="w-full max-w-sm rounded-xl bg-white shadow-xl" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+			<div class="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+				<h2 class="text-base font-semibold text-slate-900">Ganti Password</h2>
+				<button type="button" aria-label="Tutup" onclick={() => (showChangePassword = false)} class="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600">
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width={2}>
+						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</button>
+			</div>
+			<div class="space-y-4 px-5 py-4">
+				<!-- Current Password -->
+				<div class="flex flex-col gap-1">
+					<label class="text-xs font-medium text-slate-600" for="cpCurrent">Password Saat Ini</label>
+					<div class="relative">
+						<input
+							id="cpCurrent"
+							type={cpShowCurrent ? 'text' : 'password'}
+							bind:value={cpCurrentPassword}
+							placeholder="Masukkan password saat ini"
+							disabled={cpLoading}
+							class="w-full rounded-lg border border-slate-200 px-3 py-2 pr-9 text-sm text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:opacity-50"
+						/>
+						<button type="button" tabindex="-1" onclick={() => (cpShowCurrent = !cpShowCurrent)} class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+							{#if cpShowCurrent}
+								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+							{:else}
+								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+							{/if}
+						</button>
+					</div>
+				</div>
+				<!-- New Password -->
+				<div class="flex flex-col gap-1">
+					<label class="text-xs font-medium text-slate-600" for="cpNew">Password Baru</label>
+					<div class="relative">
+						<input
+							id="cpNew"
+							type={cpShowNew ? 'text' : 'password'}
+							bind:value={cpNewPassword}
+							placeholder="Masukkan password baru"
+							disabled={cpLoading}
+							class="w-full rounded-lg border border-slate-200 px-3 py-2 pr-9 text-sm text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 disabled:opacity-50"
+						/>
+						<button type="button" tabindex="-1" onclick={() => (cpShowNew = !cpShowNew)} class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+							{#if cpShowNew}
+								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+							{:else}
+								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+							{/if}
+						</button>
+					</div>
+				</div>
+			</div>
+			<div class="flex items-center justify-end gap-3 border-t border-slate-100 px-5 py-4">
+				<button type="button" onclick={() => (showChangePassword = false)} class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50">Batal</button>
+				<button type="button" onclick={handleChangePassword} disabled={cpLoading || !cpCurrentPassword || !cpNewPassword} class="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700 disabled:opacity-60">
+					{#if cpLoading}<svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>{/if}
+					Simpan
 				</button>
 			</div>
 		</div>
