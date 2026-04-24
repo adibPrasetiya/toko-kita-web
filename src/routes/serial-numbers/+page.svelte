@@ -345,53 +345,72 @@
 			<table class="w-full text-sm">
 				<thead>
 					<tr class="border-b border-slate-100 bg-slate-50 text-left">
-						<th class="whitespace-nowrap px-4 py-3 font-medium text-slate-600">Serial Number ID</th>
-						<th class="whitespace-nowrap px-4 py-3 font-medium text-slate-600">Client Name</th>
-						<th class="whitespace-nowrap px-4 py-3 font-medium text-slate-600">No. Telepon</th>
-						<th class="whitespace-nowrap px-4 py-3 font-medium text-slate-600">Toko</th>
-						<th class="whitespace-nowrap px-4 py-3 font-medium text-slate-600">Device ID</th>
-						<th class="whitespace-nowrap px-4 py-3 font-medium text-slate-600">Aktivasi</th>
-						<th class="whitespace-nowrap px-4 py-3 font-medium text-slate-600">Status</th>
-						<th class="min-w-[200px] px-4 py-3 font-medium text-slate-600">Notes</th>
-						<th class="whitespace-nowrap px-4 py-3 font-medium text-slate-600">Dibuat</th>
-						<th class="whitespace-nowrap px-4 py-3 font-medium text-slate-600">Diperbarui</th>
-						<th class="whitespace-nowrap px-4 py-3 font-medium text-slate-600">Aksi</th>
+						<th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Serial Number</th>
+						<th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Client</th>
+						<th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Toko</th>
+						<th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Device ID</th>
+						<th class="min-w-[220px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Status & Notes</th>
+						<th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Dibuat</th>
+						<th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Diperbarui</th>
+						<th class="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Aksi</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#if localSerialNumbers.length === 0}
 						<tr>
-							<td colspan={11} class="px-4 py-12 text-center text-sm text-slate-400">
+							<td colspan={8} class="px-4 py-12 text-center text-sm text-slate-400">
 								Tidak ada data serial number.
 							</td>
 						</tr>
 					{:else}
 						{#each localSerialNumbers as item}
 							<tr class="border-b border-slate-100 transition-colors hover:bg-slate-50">
-								<td class="whitespace-nowrap px-4 py-3 font-mono text-xs font-semibold tracking-wider text-slate-900">
-									{item.serialNumberId}
-								</td>
-								<td class="whitespace-nowrap px-4 py-3 text-slate-700">{item.clientName ?? '—'}</td>
-								<td class="whitespace-nowrap px-4 py-3 text-slate-700">{item.clientPhoneNumber ?? '—'}</td>
-								<td class="whitespace-nowrap px-4 py-3 text-slate-700">{item.shopName ?? '—'}</td>
-								<td class="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-700">{item.deviceId ?? '—'}</td>
-								<td class="whitespace-nowrap px-4 py-3">
-									{#if item.isActivate}
-										<span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Aktif</span>
-									{:else}
-										<span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">Tidak Aktif</span>
-									{/if}
-								</td>
-								<td class="whitespace-nowrap px-4 py-3">
-									<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {statusBadgeClass(item.status)}">
-										{item.status}
+								<td class="whitespace-nowrap px-4 py-3.5">
+									<span class="block font-mono text-sm font-semibold tracking-widest text-slate-900">{item.serialNumberId}</span>
+									<span class="mt-1 block">
+										{#if item.isActivate}
+											<span class="inline-flex items-center gap-1 text-xs font-medium text-green-600">
+												<span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>Aktif
+											</span>
+										{:else}
+											<span class="inline-flex items-center gap-1 text-xs font-medium text-slate-400">
+												<span class="h-1.5 w-1.5 rounded-full bg-slate-300"></span>Tidak Aktif
+											</span>
+										{/if}
 									</span>
 								</td>
-								<td class="max-w-[240px] px-4 py-3">
-									<span class="block truncate text-slate-500" title={item.notes ?? ''}>{item.notes ?? '—'}</span>
+								<td class="whitespace-nowrap px-4 py-3.5">
+									{#if item.clientName || item.clientPhoneNumber}
+										<span class="block text-sm text-slate-800">{item.clientName ?? '—'}</span>
+										{#if item.clientPhoneNumber}
+											<span class="mt-0.5 block text-xs text-slate-400">{item.clientPhoneNumber}</span>
+										{/if}
+									{:else}
+										<span class="text-sm text-slate-300">—</span>
+									{/if}
 								</td>
-								<td class="whitespace-nowrap px-4 py-3 text-slate-500">{fmtDate(item.createdAt)}</td>
-								<td class="whitespace-nowrap px-4 py-3 text-slate-500">{fmtDate(item.updatedAt)}</td>
+								<td class="whitespace-nowrap px-4 py-3.5">
+									{#if item.shopName}
+										<span class="text-sm text-slate-700">{item.shopName}</span>
+									{:else}
+										<span class="text-sm text-slate-300">—</span>
+									{/if}
+								</td>
+								<td class="whitespace-nowrap px-4 py-3.5">
+									{#if item.deviceId}
+										<span class="font-mono text-xs text-slate-600">{item.deviceId}</span>
+									{:else}
+										<span class="text-sm text-slate-300">—</span>
+									{/if}
+								</td>
+								<td class="px-4 py-3.5">
+									<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium {statusBadgeClass(item.status)}">{item.status}</span>
+									{#if item.notes}
+										<span class="mt-1.5 block max-w-[200px] truncate text-xs text-slate-400" title={item.notes}>{item.notes}</span>
+									{/if}
+								</td>
+								<td class="whitespace-nowrap px-4 py-3.5 text-xs text-slate-400">{fmtDate(item.createdAt)}</td>
+								<td class="whitespace-nowrap px-4 py-3.5 text-xs text-slate-400">{fmtDate(item.updatedAt)}</td>
 								<td class="whitespace-nowrap px-4 py-3">
 									<div class="relative inline-block">
 										<button
