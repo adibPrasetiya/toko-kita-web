@@ -5,7 +5,7 @@ export interface SerialNumber {
 	shopName: string | null;
 	deviceId: string | null;
 	isActivate: boolean;
-	status: string;
+	status: 'AVAILABLE' | 'SELL' | 'SOLD' | 'DEMO';
 	notes: string | null;
 	createdAt: string;
 	updatedAt: string;
